@@ -10,3 +10,4 @@
 <!-- LOVABLE:END -->
 
 - The StudyTrack UI is the original vanilla JS app: markup in `src/legacy/body.html` (rendered once on `/`), logic in `public/legacy/app.js`. Why: preserves the uploaded, nearly finished app unchanged; app.js syncs to Lovable Cloud tables `courses`/`sessions` (text ids, PK user_id+id) when signed in, localStorage in guest mode.
+- Never add a root-level index.html/app.js/styles.css (static-site leftovers). Why: their presence made the published deploy serve the old static page instead of the TanStack app.
