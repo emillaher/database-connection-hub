@@ -457,7 +457,9 @@ function renderHeaderStats() {
     statusSummaryEl.innerHTML = `<span class="text-emerald-400 font-semibold flex items-center gap-1.5"><i data-lucide="check-circle-2" class="w-4 h-4"></i> Alles im grünen Bereich</span>`;
   }
 
-  lucide.createIcons();
+  if (window.lucide && typeof window.lucide.createIcons === 'function') {
+    window.lucide.createIcons();
+  }
 }
 
 function renderCourseCards() {
@@ -477,7 +479,9 @@ function renderCourseCards() {
         </button>
       </div>
     `;
-    lucide.createIcons();
+    if (window.lucide && typeof window.lucide.createIcons === 'function') {
+      window.lucide.createIcons();
+    }
     return;
   }
 
@@ -592,7 +596,9 @@ function renderCourseCards() {
     `;
   }).join('');
 
-  lucide.createIcons();
+  if (window.lucide && typeof window.lucide.createIcons === 'function') {
+    window.lucide.createIcons();
+  }
 }
 
 function renderCourseFilterSelect() {
@@ -658,7 +664,9 @@ function renderSessionList() {
         </div>
       </div>
     `;
-    lucide.createIcons();
+    if (window.lucide && typeof window.lucide.createIcons === 'function') {
+      window.lucide.createIcons();
+    }
     return;
   }
 
@@ -742,7 +750,9 @@ function renderSessionList() {
     `;
   }).join('');
 
-  lucide.createIcons();
+  if (window.lucide && typeof window.lucide.createIcons === 'function') {
+    window.lucide.createIcons();
+  }
 }
 
 function renderActiveUserDisplay() {
@@ -1494,7 +1504,9 @@ function showToast(message, type = 'info') {
   `;
 
   container.appendChild(toast);
-  lucide.createIcons();
+  if (window.lucide && typeof window.lucide.createIcons === 'function') {
+    window.lucide.createIcons();
+  }
 
   // Animation einblenden
   setTimeout(() => {
@@ -1608,3 +1620,16 @@ window.resetToDefaultData = resetToDefaultData;
 window.calculateAttendanceStatus = calculateAttendanceStatus;
 window.renderApp = renderApp;
 window.showToast = showToast;
+
+// Automatischer Start bei direktem Aufruf
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      window.__studyTrackInit?.();
+    });
+  } else {
+    setTimeout(() => {
+      window.__studyTrackInit?.();
+    }, 0);
+  }
+}

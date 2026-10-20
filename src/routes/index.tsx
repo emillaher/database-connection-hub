@@ -47,12 +47,14 @@ declare global {
 }
 
 function Index() {
-  const [ready, setReady] = useState(false);
-
   useEffect(() => {
     document.documentElement.classList.add("dark");
     window.__sb = supabase;
+
+    let isMounted = true;
+
     (async () => {
+      // 1. Tailwind (optional runtime fallback for dynamic classes)
       try {
         await loadScript("https://cdn.tailwindcss.com");
         if (window.tailwind) {
@@ -68,33 +70,48 @@ function Index() {
           };
         }
       } catch (err) {
-        console.warn("Tailwind load issue", err);
+        console.warn("Tailwind CDN optional warning:", err);
       }
 
+      // 2. Lucide Icons
       try {
         await loadScript("https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js");
       } catch (err) {
-        console.warn("Lucide load issue", err);
+        console.warn("Lucide CDN load warning:", err);
       }
 
+      // 3. Legacy Application Script
       try {
         await loadScript("/legacy/app.js");
       } catch (err) {
-        console.error("legacy app.js load error", err);
+        console.error("legacy app.js load error:", err);
       }
 
-      try {
-        await window.__studyTrackInit?.();
-      } catch (err) {
-        console.error("studyTrackInit error", err);
-      } finally {
-        setReady(true);
-      }
+      // 4. Initialisierung starten (mit DOM-Ready Polling falls nötig)
+      const tryInit = () => {
+        if (!isMounted) return;
+        if (typeof window.__studyTrackInit === "function") {
+          const coursesGrid = document.getElementById("courses-grid");
+          if (coursesGrid) {
+            window.__studyTrackInit().catch((err) => console.error("studyTrackInit error:", err));
+          } else {
+            setTimeout(tryInit, 50);
+          }
+        } else {
+          setTimeout(tryInit, 50);
+        }
+      };
+
+      tryInit();
     })();
+
+    return () => {
+      isMounted = false;
+    };
   }, []);
 
   return (
-    <div style={{ visibility: ready ? "visible" : "hidden" }}>
+    <div className="w-full min-h-screen">
       <LegacyBody />
     </div>
   );
