@@ -574,7 +574,11 @@ function renderCourseCards() {
               <span>Gefehlt: <strong class="${result.absentCount > result.maxAllowedAbsences ? 'text-rose-400' : 'text-gray-200'}">${result.absentCount}</strong> | Entschuldigt: <strong class="text-blue-400">${result.excusedCount}</strong></span>
             </div>
             <div class="h-2.5 w-full bg-gray-800 rounded-full overflow-hidden relative border border-gray-700/50">
-              <div class="h-full transition-all duration-500 ${result.isFailed ? 'bg-rose-500' : result.isAtRisk ? 'bg-amber-500' : 'bg-emerald-500'}" style="width: ${progressFill}%"></div>
+              <div class="h-full flex">
+                <div class="h-full transition-all duration-500 ${result.isFailed ? 'bg-rose-500' : result.isAtRisk ? 'bg-amber-500' : 'bg-emerald-500'}" style="width: ${progressFill}%" title="Anwesend: ${result.presentCount}"></div>
+                <div class="h-full transition-all duration-500 bg-blue-500/70" style="width: ${result.totalSessions > 0 ? (result.excusedCount / result.totalSessions) * 100 : 0}%" title="Entschuldigt: ${result.excusedCount}"></div>
+                <div class="h-full transition-all duration-500 bg-rose-500/45" style="width: ${result.totalSessions > 0 ? (result.absentCount / result.totalSessions) * 100 : 0}%; background-image: repeating-linear-gradient(45deg, rgba(0,0,0,0.25) 0 3px, transparent 3px 6px);" title="Gefehlt: ${result.absentCount}"></div>
+              </div>
               <!-- Schwellenwert-Linie für Mindestanwesenheit -->
               <div class="absolute top-0 bottom-0 w-0.5 bg-indigo-400 z-10" style="left: ${requiredThreshold}%" title="Pflichtgrenze: ${requiredThreshold}%"></div>
             </div>
