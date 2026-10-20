@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import bodyHtml from "@/legacy/body.html?raw";
 
@@ -74,10 +74,21 @@ function Index() {
   }, []);
 
   return (
-    <div
-      className="bg-[#0b0f19] text-slate-100 min-h-screen flex flex-col antialiased"
-      style={{ visibility: ready ? "visible" : "hidden" }}
-      dangerouslySetInnerHTML={{ __html: bodyHtml }}
-    />
+    <div style={{ visibility: ready ? "visible" : "hidden" }}>
+      <LegacyBody />
+    </div>
   );
 }
+
+const legacyMarkup = { __html: bodyHtml };
+
+// Rendered once and memoized so React never re-applies the markup
+// after the legacy script has populated it.
+const LegacyBody = memo(function LegacyBody() {
+  return (
+    <div
+      className="bg-[#0b0f19] text-slate-100 min-h-screen flex flex-col antialiased"
+      dangerouslySetInnerHTML={legacyMarkup}
+    />
+  );
+});
