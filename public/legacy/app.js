@@ -1097,6 +1097,141 @@ function handleSeriesFormSubmit(e) {
 
 let parsedIcsEventsBuffer = [];
 
+function switchIcsTab(mode) {
+  const linkBtn = document.getElementById('tab-ics-link-btn');
+  const fileBtn = document.getElementById('tab-ics-file-btn');
+  const linkPane = document.getElementById('pane-ics-link');
+  const filePane = document.getElementById('pane-ics-file');
+
+  if (!linkBtn || !fileBtn || !linkPane || !filePane) return;
+
+  if (mode === 'link') {
+    linkBtn.className = 'flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 bg-indigo-600 text-white shadow-sm';
+    fileBtn.className = 'flex-1 py-1.5 px-3 rounded-lg text-xs font-medium text-slate-400 hover:text-white transition flex items-center justify-center gap-1.5';
+    linkPane.classList.remove('hidden');
+    filePane.classList.add('hidden');
+  } else {
+    fileBtn.className = 'flex-1 py-1.5 px-3 rounded-lg text-xs font-semibold transition flex items-center justify-center gap-1.5 bg-indigo-600 text-white shadow-sm';
+    linkBtn.className = 'flex-1 py-1.5 px-3 rounded-lg text-xs font-medium text-slate-400 hover:text-white transition flex items-center justify-center gap-1.5';
+    filePane.classList.remove('hidden');
+    linkPane.classList.add('hidden');
+  }
+}
+
+function renderIcsPreview(events) {
+  parsedIcsEventsBuffer = events;
+  const previewBox = document.getElementById('ics-preview-container');
+  const previewList = document.getElementById('ics-preview-list');
+  const countLabel = document.getElementById('ics-detected-count');
+
+  if (!previewBox || !previewList || !countLabel) return;
+
+  countLabel.textContent = `${events.length} Termine erkannt`;
+  previewList.innerHTML = events.slice(0, 5).map(ev => `
+    <li class="text-xs text-gray-300 py-1 border-b border-gray-800 flex justify-between">
+      <span class="truncate max-w-[200px] font-medium">${escapeHtml(ev.summary)}</span>
+      <span class="text-gray-500 font-mono">${ev.date} ${ev.startTime || ''}</span>
+    </li>
+  `).join('') + (events.length > 5 ? `<li class="text-[11px] text-gray-500 pt-1">... und ${events.length - 5} weitere</li>` : '');
+
+  previewBox.classList.remove('hidden');
+  const submitBtn = document.getElementById('btn-import-ics-submit');
+  if (submitBtn) submitBtn.disabled = false;
+}
+
+async function fetchAndParseCalendarUrl() {
+  const input = document.getElementById('ics-url-input');
+  const btn = document.getElementById('btn-fetch-ics-url');
+  const btnText = document.getElementById('btn-fetch-ics-text');
+  if (!input) return;
+
+  let rawUrl = (input.value || '').trim();
+  if (!rawUrl) {
+    showToast('Bitte gib eine Kalender-URL ein.', 'error');
+    return;
+  }
+
+  // Protokoll anpassen (webcal:// oder webcals:// -> https://)
+  if (rawUrl.startsWith('webcal://')) {
+    rawUrl = 'http://' + rawUrl.substring(9);
+  } else if (rawUrl.startsWith('webcals://')) {
+    rawUrl = 'https://' + rawUrl.substring(10);
+  } else if (!rawUrl.startsWith('http://') && !rawUrl.startsWith('https://')) {
+    rawUrl = 'https://' + rawUrl;
+  }
+
+  if (btn) btn.disabled = true;
+  if (btnText) btnText.textContent = 'Lädt...';
+
+  try {
+    let content = null;
+
+    // 1. Direkter Abrufversuch
+    try {
+      const res = await fetch(rawUrl);
+      if (res.ok) {
+        const text = await res.text();
+        if (text && (text.includes('BEGIN:VCALENDAR') || text.includes('BEGIN:VEVENT'))) {
+          content = text;
+        }
+      }
+    } catch (e) {
+      // CORS blockiert direkten Abruf, Proxy-Fallback wird genutzt
+    }
+
+    // 2. CORS Proxy Fallback (allorigins)
+    if (!content) {
+      try {
+        const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(rawUrl);
+        const res = await fetch(proxyUrl);
+        if (res.ok) {
+          const text = await res.text();
+          if (text && (text.includes('BEGIN:VCALENDAR') || text.includes('BEGIN:VEVENT'))) {
+            content = text;
+          }
+        }
+      } catch (e) {
+        // nächster Fallback
+      }
+    }
+
+    // 3. CORS Proxy Fallback (corsproxy.io)
+    if (!content) {
+      try {
+        const proxyUrl2 = 'https://corsproxy.io/?url=' + encodeURIComponent(rawUrl);
+        const res = await fetch(proxyUrl2);
+        if (res.ok) {
+          const text = await res.text();
+          if (text && (text.includes('BEGIN:VCALENDAR') || text.includes('BEGIN:VEVENT'))) {
+            content = text;
+          }
+        }
+      } catch (e) {
+        // Fehler wird unten behandelt
+      }
+    }
+
+    if (!content) {
+      throw new Error('Der Kalender konnte nicht abgerufen werden. Bitte prüfe die URL oder lade die .ics Datei herunter.');
+    }
+
+    const events = parseIcs(content);
+    if (!events || events.length === 0) {
+      showToast('Keine Termine im Online-Kalender gefunden.', 'error');
+      return;
+    }
+
+    renderIcsPreview(events);
+    showToast(`${events.length} Termine erfolgreich aus Online-Kalender geladen!`, 'success');
+  } catch (err) {
+    console.error(err);
+    showToast(err.message || 'Fehler beim Laden des Online-Kalenders.', 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+    if (btnText) btnText.textContent = 'Laden';
+  }
+}
+
 function openIcsModal() {
   const modal = document.getElementById('modal-ics');
   const courseSelect = document.getElementById('ics-course-select');
@@ -1107,10 +1242,18 @@ function openIcsModal() {
     ${state.courses.map(c => `<option value="${c.id}">Zuordnen zu: ${escapeHtml(c.name)}</option>`).join('')}
   `;
 
-  document.getElementById('ics-file-input').value = '';
-  document.getElementById('ics-preview-container').classList.add('hidden');
-  document.getElementById('btn-import-ics-submit').disabled = true;
+  const urlInput = document.getElementById('ics-url-input');
+  if (urlInput) urlInput.value = '';
+  const fileInput = document.getElementById('ics-file-input');
+  if (fileInput) fileInput.value = '';
+
+  const previewBox = document.getElementById('ics-preview-container');
+  if (previewBox) previewBox.classList.add('hidden');
+  const submitBtn = document.getElementById('btn-import-ics-submit');
+  if (submitBtn) submitBtn.disabled = true;
   parsedIcsEventsBuffer = [];
+
+  switchIcsTab('link');
 
   modal.classList.remove('hidden');
   modal.classList.add('flex');
@@ -1132,29 +1275,15 @@ function handleIcsFileSelected(event) {
   reader.onload = function(e) {
     try {
       const content = e.target.result;
-      parsedIcsEventsBuffer = parseIcs(content);
+      const events = parseIcs(content);
 
-      if (parsedIcsEventsBuffer.length === 0) {
+      if (!events || events.length === 0) {
         showToast('Keine Termine in der .ics Datei gefunden.', 'error');
         return;
       }
 
-      // Vorschau anzeigen
-      const previewBox = document.getElementById('ics-preview-container');
-      const previewList = document.getElementById('ics-preview-list');
-      const countLabel = document.getElementById('ics-detected-count');
-
-      countLabel.textContent = `${parsedIcsEventsBuffer.length} Termine erkannt`;
-      previewList.innerHTML = parsedIcsEventsBuffer.slice(0, 5).map(ev => `
-        <li class="text-xs text-gray-300 py-1 border-b border-gray-800 flex justify-between">
-          <span class="truncate max-w-[200px] font-medium">${escapeHtml(ev.summary)}</span>
-          <span class="text-gray-500 font-mono">${ev.date} ${ev.startTime || ''}</span>
-        </li>
-      `).join('') + (parsedIcsEventsBuffer.length > 5 ? `<li class="text-[11px] text-gray-500 pt-1">... und ${parsedIcsEventsBuffer.length - 5} weitere</li>` : '');
-
-      previewBox.classList.remove('hidden');
-      document.getElementById('btn-import-ics-submit').disabled = false;
-      showToast(`${parsedIcsEventsBuffer.length} Termine erfolgreich eingelesen.`, 'success');
+      renderIcsPreview(events);
+      showToast(`${events.length} Termine erfolgreich eingelesen.`, 'success');
     } catch (err) {
       console.error(err);
       showToast('Fehler beim Parsen der .ics Datei.', 'error');
