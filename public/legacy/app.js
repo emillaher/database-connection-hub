@@ -65,17 +65,19 @@ function calculateAttendanceStatus(course, sessions = []) {
   const remainingAbsences = maxAllowedAbsences - absentCount;
 
   // Ampel-System:
-  // - Grün: Sicher (mindestens 2 Fehltage Puffer)
+  // - Grün: Mindestanwesenheit erreicht oder mindestens 2 Fehltage Puffer
   // - Gelb: Kritisches Limit (nur noch maximal 1 Fehltag übrig: 0 oder 1)
   // - Rot: Pflicht unterschritten (< 0 Fehltage übrig)
   let trafficLight = 'green';
   let isFailed = false;
   let isAtRisk = false;
+  const attendedSoFar = presentCount + excusedCount;
+  const hasReachedRequiredAttendance = attendedSoFar >= requiredAttendance;
 
   if (remainingAbsences < 0) {
     trafficLight = 'red';
     isFailed = true;
-  } else if (remainingAbsences <= 1) {
+  } else if (!hasReachedRequiredAttendance && remainingAbsences <= 1) {
     trafficLight = 'yellow';
     isAtRisk = true;
   } else {
@@ -83,7 +85,6 @@ function calculateAttendanceStatus(course, sessions = []) {
   }
 
   // Quoten
-  const attendedSoFar = presentCount + excusedCount;
   const currentAttendancePercent = completedCount > 0
     ? Math.round((attendedSoFar / completedCount) * 1000) / 10
     : 100;
@@ -96,6 +97,8 @@ function calculateAttendanceStatus(course, sessions = []) {
   if (isFailed) {
     const overdue = Math.abs(remainingAbsences);
     statusMessage = `Prüfungszulassung gefährdet! Pflicht um ${overdue} ${overdue === 1 ? 'Fehltermin' : 'Fehltermine'} unterschritten.`;
+  } else if (hasReachedRequiredAttendance) {
+    statusMessage = 'Mindestanwesenheit erfüllt: Du bist innerhalb der erlaubten Fehlzeiten.';
   } else if (remainingAbsences === 0) {
     statusMessage = `Kritisches Limit: Du darfst in diesem Fach kein weiteres Mal fehlen!`;
   } else if (remainingAbsences === 1) {
@@ -543,7 +546,7 @@ function renderCourseCards() {
           <div class="my-4 p-3.5 rounded-xl bg-gray-900/80 border border-gray-800/80 flex items-center justify-between">
             <div>
               <span class="text-[11px] uppercase tracking-wider text-gray-400 font-semibold block">Verbleibende Fehltage</span>
-              <div class="text-xl font-extrabold ${result.isFailed ? 'text-rose-400' : result.remainingAbsences <= 1 ? 'text-amber-400' : 'text-emerald-400'} mt-0.5 flex items-baseline gap-1.5">
+              <div class="text-xl font-extrabold ${result.isFailed ? 'text-rose-400' : result.isAtRisk ? 'text-amber-400' : 'text-emerald-400'} mt-0.5 flex items-baseline gap-1.5">
                 <span>${result.isFailed ? `${result.remainingAbsences}` : result.remainingAbsences}</span>
                 <span class="text-xs font-normal text-gray-400">von max. ${result.maxAllowedAbsences} erlaubt</span>
               </div>

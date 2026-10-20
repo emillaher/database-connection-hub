@@ -86,19 +86,21 @@ export function calculateAttendanceStatus(
   const remainingAbsences = maxAllowedAbsences - absentCount;
 
   // Ampel-Logik:
-  // - Grün: Sicher (mehrere Fehltage Puffer: >= 2)
+  // - Grün: Mindestanwesenheit erreicht oder mehrere Fehltage Puffer (>= 2)
   // - Gelb: Kritisches Limit (nur noch maximal 1 Fehltag übrig: 0 oder 1)
   // - Rot: Pflicht unterschritten (< 0 Fehltage übrig)
   let trafficLight: TrafficLightColor;
   let isFailed = false;
   let isAtRisk = false;
   let isAttendanceFulfilled = true;
+  const attendedSoFar = presentCount + excusedCount;
+  const hasReachedRequiredAttendance = attendedSoFar >= requiredAttendance;
 
   if (remainingAbsences < 0) {
     trafficLight = 'red';
     isFailed = true;
     isAttendanceFulfilled = false;
-  } else if (remainingAbsences <= 1) {
+  } else if (!hasReachedRequiredAttendance && remainingAbsences <= 1) {
     trafficLight = 'yellow';
     isAtRisk = true;
     isAttendanceFulfilled = true;
@@ -109,7 +111,6 @@ export function calculateAttendanceStatus(
 
   // Quoten-Berechnungen (in Prozent mit 1 Nachkommastelle)
   // Aktuelle Quote: basierend auf bisher absolvierten Einheiten
-  const attendedSoFar = presentCount + excusedCount;
   const currentAttendancePercent = completedCount > 0
     ? Math.round((attendedSoFar / completedCount) * 1000) / 10
     : 100;
@@ -124,6 +125,8 @@ export function calculateAttendanceStatus(
   if (isFailed) {
     const overdue = Math.abs(remainingAbsences);
     statusMessage = `Prüfungszulassung gefährdet! Die Pflicht wurde um ${overdue} ${overdue === 1 ? 'Fehltag' : 'Fehltage'} überschritten.`;
+  } else if (hasReachedRequiredAttendance) {
+    statusMessage = 'Mindestanwesenheit erfüllt: Du bist innerhalb der erlaubten Fehlzeiten.';
   } else if (remainingAbsences === 0) {
     statusMessage = `Kritisches Limit: Du darfst kein einziges Mal mehr fehlen!`;
   } else if (remainingAbsences === 1) {
