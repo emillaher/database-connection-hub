@@ -309,7 +309,9 @@ function saveState() {
 // ==========================================
 // Cloud-Datenbank (Lovable Cloud)
 // ==========================================
-const sb = window.__sb;
+function getSb() {
+  return window.__sb || null;
+}
 let cloudSynced = { courses: new Set(), sessions: new Set() };
 let syncTimer = null;
 let syncRunning = Promise.resolve();
@@ -336,6 +338,8 @@ function rowToSession(r) {
 }
 
 async function loadCloudState() {
+  const sb = getSb();
+  if (!sb) return;
   const [c, s] = await Promise.all([
     sb.from('courses').select('*').order('created_at'),
     sb.from('sessions').select('*').order('date').range(0, 9999)
@@ -352,6 +356,8 @@ function scheduleCloudSync() {
 }
 
 async function syncCloud() {
+  const sb = getSb();
+  if (!sb) return;
   try {
     const courseIds = new Set(state.courses.map(c => c.id));
     const sessionIds = new Set(state.sessions.map(s => s.id));
@@ -1383,6 +1389,12 @@ async function handleLoginSubmit(e) {
   const password = document.getElementById('account-password-input').value;
   if (!email || !password) return;
 
+  const sb = getSb();
+  if (!sb) {
+    showToast('Datenbankverbindung nicht verfügbar.', 'error');
+    return;
+  }
+
   let { data, error } = await sb.auth.signInWithPassword({ email, password });
   if (error && /invalid login credentials/i.test(error.message)) {
     const res = await sb.auth.signUp({ email, password, options: { emailRedirectTo: window.location.origin } });
@@ -1401,7 +1413,10 @@ async function handleLoginSubmit(e) {
 }
 
 async function logoutUser() {
-  await sb.auth.signOut();
+  const sb = getSb();
+  if (sb && sb.auth) {
+    await sb.auth.signOut();
+  }
   closeAccountModal();
   await applySession(null);
   showToast('Abgemeldet. Lokaler Gastmodus aktiv.', 'info');
@@ -1498,54 +1513,98 @@ function showToast(message, type = 'info') {
 // ==========================================
 
 window.__studyTrackInit = async () => {
-  loadState();
-  renderApp();
-  const { data: { session } } = await sb.auth.getSession();
-  if (session) await applySession(session);
-  sb.auth.onAuthStateChange((event, s) => {
-    if (event === 'SIGNED_IN' && state.currentUser.isGuest && s) setTimeout(() => applySession(s), 0);
-  });
+  try {
+    loadState();
+    renderApp();
+  } catch (err) {
+    console.error('loadState / renderApp Fehler:', err);
+  }
+
+  try {
+    const sb = getSb();
+    if (sb && sb.auth) {
+      const { data: { session } } = await sb.auth.getSession();
+      if (session) await applySession(session);
+      sb.auth.onAuthStateChange((event, s) => {
+        if (event === 'SIGNED_IN' && state.currentUser.isGuest && s) setTimeout(() => applySession(s), 0);
+      });
+    }
+  } catch (err) {
+    console.warn('Supabase Auth init Hinweis:', err);
+  }
 
   // Filter Event Listeners
-  const courseFilter = document.getElementById('filter-course-select');
-  if (courseFilter) {
-    courseFilter.addEventListener('change', (e) => {
-      state.selectedCourseId = e.target.value;
-      renderSessionList();
-    });
+  try {
+    const courseFilter = document.getElementById('filter-course-select');
+    if (courseFilter) {
+      courseFilter.addEventListener('change', (e) => {
+        state.selectedCourseId = e.target.value;
+        renderSessionList();
+      });
+    }
+
+    const statusFilter = document.getElementById('filter-status-select');
+    if (statusFilter) {
+      statusFilter.addEventListener('change', (e) => {
+        state.filterStatus = e.target.value;
+        renderSessionList();
+      });
+    }
+
+    const searchInput = document.getElementById('search-sessions-input');
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => {
+        state.searchQuery = e.target.value;
+        renderSessionList();
+      });
+    }
+
+    // Form Submits
+    const courseForm = document.getElementById('form-course');
+    if (courseForm) courseForm.addEventListener('submit', handleCourseFormSubmit);
+
+    const sessionForm = document.getElementById('form-session');
+    if (sessionForm) sessionForm.addEventListener('submit', handleSessionFormSubmit);
+
+    const seriesForm = document.getElementById('form-series');
+    if (seriesForm) seriesForm.addEventListener('submit', handleSeriesFormSubmit);
+
+    const loginForm = document.getElementById('form-login');
+    if (loginForm) loginForm.addEventListener('submit', handleLoginSubmit);
+
+    const icsInput = document.getElementById('ics-file-input');
+    if (icsInput) icsInput.addEventListener('change', handleIcsFileSelected);
+  } catch (err) {
+    console.error('Event Listener Setup Fehler:', err);
   }
 
-  const statusFilter = document.getElementById('filter-status-select');
-  if (statusFilter) {
-    statusFilter.addEventListener('change', (e) => {
-      state.filterStatus = e.target.value;
-      renderSessionList();
-    });
+  if (window.lucide && typeof window.lucide.createIcons === 'function') {
+    window.lucide.createIcons();
   }
-
-  const searchInput = document.getElementById('search-sessions-input');
-  if (searchInput) {
-    searchInput.addEventListener('input', (e) => {
-      state.searchQuery = e.target.value;
-      renderSessionList();
-    });
-  }
-
-  // Form Submits
-  const courseForm = document.getElementById('form-course');
-  if (courseForm) courseForm.addEventListener('submit', handleCourseFormSubmit);
-
-  const sessionForm = document.getElementById('form-session');
-  if (sessionForm) sessionForm.addEventListener('submit', handleSessionFormSubmit);
-
-  const seriesForm = document.getElementById('form-series');
-  if (seriesForm) seriesForm.addEventListener('submit', handleSeriesFormSubmit);
-
-  const loginForm = document.getElementById('form-login');
-  if (loginForm) loginForm.addEventListener('submit', handleLoginSubmit);
-
-  const icsInput = document.getElementById('ics-file-input');
-  if (icsInput) icsInput.addEventListener('change', handleIcsFileSelected);
-
-  lucide.createIcons();
 };
+
+// Explizite Zuweisung aller Handler an window für unterbrechungsfreie onclick-Interaktion
+window.openCourseModal = openCourseModal;
+window.closeCourseModal = closeCourseModal;
+window.openSessionModal = openSessionModal;
+window.closeSessionModal = closeSessionModal;
+window.openSeriesModal = openSeriesModal;
+window.closeSeriesModal = closeSeriesModal;
+window.openIcsModal = openIcsModal;
+window.closeIcsModal = closeIcsModal;
+window.openAccountModal = openAccountModal;
+window.closeAccountModal = closeAccountModal;
+window.logoutUser = logoutUser;
+window.switchIcsTab = switchIcsTab;
+window.fetchAndParseCalendarUrl = fetchAndParseCalendarUrl;
+window.executeIcsImport = executeIcsImport;
+window.updateSessionStatus = updateSessionStatus;
+window.deleteSession = deleteSession;
+window.deleteCourse = deleteCourse;
+window.selectCourseFilter = selectCourseFilter;
+window.markAllPastAsPresent = markAllPastAsPresent;
+window.exportBackupJson = exportBackupJson;
+window.resetToDefaultData = resetToDefaultData;
+window.calculateAttendanceStatus = calculateAttendanceStatus;
+window.renderApp = renderApp;
+window.showToast = showToast;

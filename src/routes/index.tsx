@@ -53,24 +53,44 @@ function Index() {
     document.documentElement.classList.add("dark");
     window.__sb = supabase;
     (async () => {
-      await loadScript("https://cdn.tailwindcss.com");
-      if (window.tailwind) {
-        window.tailwind.config = {
-          darkMode: "class",
-          theme: {
-            extend: {
-              colors: {
-                brand: { 50: "#eef2ff", 100: "#e0e7ff", 500: "#6366f1", 600: "#4f46e5", 700: "#4338ca" },
+      try {
+        await loadScript("https://cdn.tailwindcss.com");
+        if (window.tailwind) {
+          window.tailwind.config = {
+            darkMode: "class",
+            theme: {
+              extend: {
+                colors: {
+                  brand: { 50: "#eef2ff", 100: "#e0e7ff", 500: "#6366f1", 600: "#4f46e5", 700: "#4338ca" },
+                },
               },
             },
-          },
-        };
+          };
+        }
+      } catch (err) {
+        console.warn("Tailwind load issue", err);
       }
-      await loadScript("https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js");
-      await loadScript("/legacy/app.js");
-      await window.__studyTrackInit?.();
-      setReady(true);
-    })().catch((e) => console.error(e));
+
+      try {
+        await loadScript("https://unpkg.com/lucide@0.469.0/dist/umd/lucide.min.js");
+      } catch (err) {
+        console.warn("Lucide load issue", err);
+      }
+
+      try {
+        await loadScript("/legacy/app.js");
+      } catch (err) {
+        console.error("legacy app.js load error", err);
+      }
+
+      try {
+        await window.__studyTrackInit?.();
+      } catch (err) {
+        console.error("studyTrackInit error", err);
+      } finally {
+        setReady(true);
+      }
+    })();
   }, []);
 
   return (
