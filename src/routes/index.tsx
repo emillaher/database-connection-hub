@@ -31,7 +31,7 @@ function loadScript(src: string) {
     if (existing) return resolve();
     const s = document.createElement("script");
     s.src = src;
-    s.dataset.src = src;
+    s.setAttribute("data-src", src);
     s.onload = () => resolve();
     s.onerror = () => reject(new Error(`Failed to load ${src}`));
     document.body.appendChild(s);
