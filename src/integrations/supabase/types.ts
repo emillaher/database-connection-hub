@@ -14,7 +14,125 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      courses: {
+        Row: {
+          code: string | null
+          color: string | null
+          created_at: string
+          id: string
+          lecturer: string | null
+          min_attendance_percent: number
+          name: string
+          notes: string | null
+          room: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          code?: string | null
+          color?: string | null
+          created_at?: string
+          id: string
+          lecturer?: string | null
+          min_attendance_percent?: number
+          name: string
+          notes?: string | null
+          room?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Update: {
+          code?: string | null
+          color?: string | null
+          created_at?: string
+          id?: string
+          lecturer?: string | null
+          min_attendance_percent?: number
+          name?: string
+          notes?: string | null
+          room?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      profiles: {
+        Row: {
+          created_at: string
+          display_name: string | null
+          email: string | null
+          id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          display_name?: string | null
+          email?: string | null
+          id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          display_name?: string | null
+          email?: string | null
+          id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      sessions: {
+        Row: {
+          course_id: string
+          created_at: string
+          date: string
+          end_time: string | null
+          id: string
+          note: string | null
+          room: string | null
+          start_time: string | null
+          status: string
+          topic: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          course_id: string
+          created_at?: string
+          date: string
+          end_time?: string | null
+          id: string
+          note?: string | null
+          room?: string | null
+          start_time?: string | null
+          status?: string
+          topic?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Update: {
+          course_id?: string
+          created_at?: string
+          date?: string
+          end_time?: string | null
+          id?: string
+          note?: string | null
+          room?: string | null
+          start_time?: string | null
+          status?: string
+          topic?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "sessions_user_id_course_id_fkey"
+            columns: ["user_id", "course_id"]
+            isOneToOne: false
+            referencedRelation: "courses"
+            referencedColumns: ["user_id", "id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
