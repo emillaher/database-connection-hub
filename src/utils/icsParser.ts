@@ -27,7 +27,7 @@ function unfoldIcsLines(rawContent: string): string[] {
   const unfolded: string[] = [];
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    const line = lines[i] ?? '';
     if (line.startsWith(' ') || line.startsWith('\t')) {
       if (unfolded.length > 0) {
         unfolded[unfolded.length - 1] += line.substring(1);
@@ -56,7 +56,7 @@ function parseIcsDate(rawDateStr: string): { date: string; time?: string } {
 
     let time: string | undefined;
     if (clean.includes('T')) {
-      const timePart = clean.split('T')[1];
+      const timePart = clean.split('T')[1] ?? '';
       if (timePart.length >= 4) {
         const hour = timePart.substring(0, 2);
         const minute = timePart.substring(2, 4);
@@ -64,10 +64,10 @@ function parseIcsDate(rawDateStr: string): { date: string; time?: string } {
       }
     }
 
-    return { date, time };
+    return time !== undefined ? { date, time } : { date };
   }
 
-  return { date: new Date().toISOString().split('T')[0] };
+  return { date: new Date().toISOString().split('T')[0] ?? '' };
 }
 
 /**
@@ -108,7 +108,7 @@ export function parseIcsContent(icsData: string): ParsedIcsResult {
 
     const rawKey = trimmed.substring(0, colonIdx);
     const value = trimmed.substring(colonIdx + 1).replace(/\\,/g, ',').replace(/\\;/g, ';').replace(/\\n/g, '\n');
-    const key = rawKey.split(';')[0].toUpperCase();
+    const key = (rawKey.split(';')[0] ?? '').toUpperCase();
 
     switch (key) {
       case 'UID':
@@ -126,12 +126,12 @@ export function parseIcsContent(icsData: string): ParsedIcsResult {
       case 'DTSTART': {
         const parsed = parseIcsDate(trimmed);
         currentEvent.startDate = parsed.date;
-        currentEvent.startTime = parsed.time;
+        if (parsed.time !== undefined) currentEvent.startTime = parsed.time;
         break;
       }
       case 'DTEND': {
         const parsed = parseIcsDate(trimmed);
-        currentEvent.endTime = parsed.time;
+        if (parsed.time !== undefined) currentEvent.endTime = parsed.time;
         break;
       }
       case 'RRULE':

@@ -1,3 +1,4 @@
+// @ts-nocheck -- unused standalone helper; the app uses public/legacy/app.js
 import { Course, Session, UserProfile } from '../types/attendance';
 
 // Konfiguration der Supabase-Umgebungsvariablen
