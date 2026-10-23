@@ -16,41 +16,53 @@ export type Database = {
     Tables: {
       courses: {
         Row: {
+          archived: boolean
           code: string | null
           color: string | null
           created_at: string
+          ects: number | null
+          grade: number | null
           id: string
           lecturer: string | null
           min_attendance_percent: number
           name: string
           notes: string | null
           room: string | null
+          semester: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
+          archived?: boolean
           code?: string | null
           color?: string | null
           created_at?: string
+          ects?: number | null
+          grade?: number | null
           id: string
           lecturer?: string | null
           min_attendance_percent?: number
           name: string
           notes?: string | null
           room?: string | null
+          semester?: string | null
           updated_at?: string
           user_id?: string
         }
         Update: {
+          archived?: boolean
           code?: string | null
           color?: string | null
           created_at?: string
+          ects?: number | null
+          grade?: number | null
           id?: string
           lecturer?: string | null
           min_attendance_percent?: number
           name?: string
           notes?: string | null
           room?: string | null
+          semester?: string | null
           updated_at?: string
           user_id?: string
         }

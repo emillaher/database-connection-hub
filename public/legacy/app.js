@@ -269,6 +269,9 @@ let state = {
   selectedCourseId: 'all',
   filterStatus: 'all',
   searchQuery: '',
+  view: 'dashboard',
+  semesterFilter: 'all',
+  showArchive: false,
   currentUser: {
     id: 'guest',
     displayName: 'Gast-Student',
@@ -325,11 +328,15 @@ function guestUser() {
 
 function courseToRow(c) {
   return { id: c.id, name: c.name, code: c.code || null, room: c.room || null, lecturer: c.lecturer || null,
-    color: c.color || null, min_attendance_percent: Number(c.minAttendancePercent) || 0, notes: c.notes || null };
+    color: c.color || null, min_attendance_percent: Number(c.minAttendancePercent) || 0, notes: c.notes || null,
+    semester: c.semester || null, archived: !!c.archived,
+    ects: c.ects == null || c.ects === '' ? null : Number(c.ects), grade: c.grade == null || c.grade === '' ? null : Number(c.grade) };
 }
 function rowToCourse(r) {
   return { id: r.id, name: r.name, code: r.code || '', room: r.room || '', lecturer: r.lecturer || '',
-    color: r.color || '#6366f1', minAttendancePercent: Number(r.min_attendance_percent), notes: r.notes || '' };
+    color: r.color || '#6366f1', minAttendancePercent: Number(r.min_attendance_percent), notes: r.notes || '',
+    semester: r.semester || '', archived: !!r.archived,
+    ects: r.ects == null ? null : Number(r.ects), grade: r.grade == null ? null : Number(r.grade) };
 }
 function sessionToRow(s) {
   return { id: s.id, course_id: s.courseId, date: s.date, start_time: s.startTime || null, end_time: s.endTime || null,
@@ -420,11 +427,203 @@ function resetToDefaultData() {
 // 4. UI Rendering & Echtzeit-Aktualisierung
 // ==========================================
 
+// ---------- Semester / Archiv / Noten ----------
+function semesterKeyFromDate(d) {
+  const m = d.getMonth() + 1, y = d.getFullYear();
+  if (m >= 10) return 'WS' + y;
+  if (m <= 2) return 'WS' + (y - 1);
+  return 'SS' + y;
+}
+function currentSemesterKey() { return semesterKeyFromDate(new Date()); }
+function semesterLabel(key) {
+  if (!key) return '';
+  const y = parseInt(key.slice(2), 10);
+  if (key.startsWith('WS')) return `WS ${y}/${String((y + 1) % 100).padStart(2, '0')}`;
+  return `SS ${y}`;
+}
+function semesterSortValue(key) { return parseInt(key.slice(2), 10) * 2 + (key.startsWith('WS') ? 1 : 0); }
+function courseSemester(c) {
+  if (c.semester) return c.semester;
+  const dates = state.sessions.filter(s => s.courseId === c.id).map(s => s.date).sort();
+  return dates.length ? semesterKeyFromDate(new Date(dates[0] + 'T12:00:00')) : currentSemesterKey();
+}
+function weightedGradeAverage(courses) {
+  let sum = 0, ects = 0;
+  courses.forEach(c => {
+    const g = Number(c.grade), e = Number(c.ects);
+    if (!g || !e || g < 1 || g > 5 || e <= 0) return;
+    sum += g * e; ects += e;
+  });
+  return ects > 0 ? sum / ects : null;
+}
+function allSemesterKeys() {
+  const keys = new Set(state.courses.map(courseSemester));
+  keys.add(currentSemesterKey());
+  return [...keys].sort((a, b) => semesterSortValue(b) - semesterSortValue(a));
+}
+function activeCourses() { return state.courses.filter(c => !c.archived); }
+function visibleCourses() {
+  return state.courses.filter(c => !!c.archived === !!state.showArchive &&
+    (state.semesterFilter === 'all' || courseSemester(c) === state.semesterFilter));
+}
+function fillSemesterSelect(selected) {
+  const sel = document.getElementById('course-semester-input');
+  if (!sel) return;
+  const keys = new Set(allSemesterKeys());
+  const cur = currentSemesterKey();
+  const y = parseInt(cur.slice(2), 10);
+  ['SS' + (y - 1), 'WS' + (y - 1), 'SS' + y, 'WS' + y, 'SS' + (y + 1), 'WS' + (y + 1)].forEach(k => keys.add(k));
+  if (selected) keys.add(selected);
+  sel.innerHTML = [...keys].sort((a, b) => semesterSortValue(b) - semesterSortValue(a))
+    .map(k => `<option value="${k}" ${k === selected ? 'selected' : ''}>${semesterLabel(k)}</option>`).join('');
+}
+
+function switchView(view) {
+  state.view = view;
+  renderApp();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function setSemesterFilter(key) { state.semesterFilter = key; renderApp(); }
+function toggleArchiveView() { state.showArchive = !state.showArchive; renderApp(); }
+function toggleCourseArchived(courseId) {
+  const c = state.courses.find(x => x.id === courseId);
+  if (!c) return;
+  c.archived = !c.archived;
+  if (!c.semester) c.semester = courseSemester(c);
+  saveState();
+  renderApp();
+  showToast(c.archived ? `"${c.name}" archiviert.` : `"${c.name}" wieder aktiv.`, 'success');
+}
+function archiveSemester() {
+  const key = state.semesterFilter;
+  if (key === 'all') return;
+  const list = activeCourses().filter(c => courseSemester(c) === key);
+  if (!list.length) return showToast('Keine aktiven Fächer in diesem Semester.', 'info');
+  if (!confirm(`${semesterLabel(key)} abschließen und ${list.length} Fächer archivieren?`)) return;
+  list.forEach(c => { c.archived = true; c.semester = key; });
+  saveState();
+  renderApp();
+  showToast(`${semesterLabel(key)} archiviert.`, 'success');
+}
+function updateCourseGrade(courseId, field, value) {
+  const c = state.courses.find(x => x.id === courseId);
+  if (!c) return;
+  if (field === 'grade') c.grade = value === '' ? null : parseInt(value, 10);
+  if (field === 'ects') c.ects = value === '' ? null : Math.max(0, parseFloat(String(value).replace(',', '.')) || 0);
+  saveState();
+  renderGradesView();
+}
+function fmtGrade(v) { return v == null ? '–' : v.toFixed(2).replace('.', ','); }
+
+function renderNav() {
+  const dash = document.getElementById('view-dashboard');
+  const grades = document.getElementById('view-grades');
+  if (dash) dash.classList.toggle('hidden', state.view !== 'dashboard');
+  if (grades) grades.classList.toggle('hidden', state.view !== 'grades');
+  document.querySelectorAll('[data-nav]').forEach(b => {
+    const on = b.getAttribute('data-nav') === state.view;
+    b.className = `px-3.5 py-1.5 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 ${on ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'}`;
+  });
+}
+
+function renderTodayShortcut() {
+  const el = document.getElementById('today-shortcut');
+  if (!el) return;
+  const d = new Date();
+  const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const active = new Map(activeCourses().map(c => [c.id, c]));
+  const list = state.sessions.filter(s => s.date === today && active.has(s.courseId))
+    .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+  const dateLabel = d.toLocaleDateString('de-AT', { weekday: 'long', day: 'numeric', month: 'long' });
+  const btn = (s, status, label, icon, on) => `<button onclick="updateSessionStatus('${s.id}','${status}')" class="px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 border transition ${s.status === status ? on : 'bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800'}"><i data-lucide="${icon}" class="w-3.5 h-3.5"></i>${label}</button>`;
+  el.innerHTML = `
+    <div class="glass-card rounded-2xl p-4 border border-indigo-500/30">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="calendar-check" class="w-4 h-4 text-indigo-400"></i> Heute</h2>
+        <span class="text-xs text-slate-400">${escapeHtml(dateLabel)}</span>
+      </div>
+      ${list.length === 0 ? `<p class="text-xs text-slate-400">Heute stehen keine Termine an. 🎉</p>` : `<div class="space-y-2">${list.map(s => {
+        const c = active.get(s.courseId);
+        return `<div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-xl bg-slate-900/70 border border-slate-800">
+          <div class="flex items-center gap-3 min-w-0">
+            <span class="w-2.5 h-10 rounded-full shrink-0" style="background:${c.color || '#6366f1'}"></span>
+            <div class="min-w-0">
+              <div class="text-sm font-bold text-slate-100 truncate">${escapeHtml(c.name)}</div>
+              <div class="text-xs text-slate-400 font-mono">${escapeHtml(s.startTime || '')}${s.endTime ? '–' + escapeHtml(s.endTime) : ''} ${s.topic ? '· ' + escapeHtml(s.topic) : ''}</div>
+            </div>
+          </div>
+          <div class="flex gap-2 flex-wrap">
+            ${btn(s, 'present', 'Anwesend', 'check', 'bg-emerald-600 border-emerald-500 text-white')}
+            ${btn(s, 'absent', 'Gefehlt', 'x', 'bg-rose-600 border-rose-500 text-white')}
+            ${btn(s, 'excused', 'Entschuldigt', 'file-check', 'bg-blue-600 border-blue-500 text-white')}
+          </div>
+        </div>`;
+      }).join('')}</div>`}
+    </div>`;
+}
+
+function renderSemesterBar() {
+  const el = document.getElementById('semester-bar');
+  if (!el) return;
+  const keys = allSemesterKeys();
+  const archivedCount = state.courses.filter(c => c.archived).length;
+  el.innerHTML = `
+    <div class="flex flex-wrap items-center gap-2">
+      <select onchange="setSemesterFilter(this.value)" class="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-xl px-3 py-2 outline-none focus:ring-2 focus:ring-indigo-500">
+        <option value="all" ${state.semesterFilter === 'all' ? 'selected' : ''}>Alle Semester</option>
+        ${keys.map(k => `<option value="${k}" ${k === state.semesterFilter ? 'selected' : ''}>${semesterLabel(k)}${k === currentSemesterKey() ? ' (aktuell)' : ''}</option>`).join('')}
+      </select>
+      <button onclick="toggleArchiveView()" class="px-3 py-2 rounded-xl text-xs font-semibold border transition flex items-center gap-1.5 ${state.showArchive ? 'bg-amber-500/15 border-amber-500/40 text-amber-300' : 'bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800'}">
+        <i data-lucide="archive" class="w-3.5 h-3.5"></i> ${state.showArchive ? 'Archiv anzeigen: an' : `Archiv (${archivedCount})`}
+      </button>
+      ${state.semesterFilter !== 'all' && !state.showArchive ? `<button onclick="archiveSemester()" class="px-3 py-2 rounded-xl text-xs font-semibold border bg-slate-900 border-slate-700 text-slate-300 hover:bg-slate-800 flex items-center gap-1.5"><i data-lucide="check-check" class="w-3.5 h-3.5"></i> Semester abschließen</button>` : ''}
+    </div>`;
+}
+
+function renderGradesView() {
+  const el = document.getElementById('grades-content');
+  if (!el) return;
+  const keys = [...new Set(state.courses.map(courseSemester))].sort((a, b) => semesterSortValue(b) - semesterSortValue(a));
+  const total = weightedGradeAverage(state.courses);
+  const totalEcts = state.courses.reduce((s, c) => s + (Number(c.grade) >= 1 && Number(c.grade) <= 4 ? Number(c.ects) || 0 : 0), 0);
+  const plannedEcts = state.courses.reduce((s, c) => s + (Number(c.ects) || 0), 0);
+  const gradeOptions = (g) => `<option value="" ${g == null ? 'selected' : ''}>–</option>` +
+    [1, 2, 3, 4, 5].map(n => `<option value="${n}" ${Number(g) === n ? 'selected' : ''}>${n}</option>`).join('');
+  el.innerHTML = `
+    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+      <div class="glass-card rounded-2xl p-4 border border-slate-800"><span class="text-xs uppercase tracking-wider text-slate-400 font-semibold">Gesamtschnitt</span><div class="text-3xl font-extrabold text-white mt-1">${fmtGrade(total)}</div><span class="text-[11px] text-slate-500">ECTS-gewichtet, inkl. Archiv</span></div>
+      <div class="glass-card rounded-2xl p-4 border border-slate-800"><span class="text-xs uppercase tracking-wider text-slate-400 font-semibold">ECTS bestanden</span><div class="text-3xl font-extrabold text-emerald-400 mt-1">${String(totalEcts).replace('.', ',')}</div><span class="text-[11px] text-slate-500">Fächer mit Note 1–4</span></div>
+      <div class="glass-card rounded-2xl p-4 border border-slate-800"><span class="text-xs uppercase tracking-wider text-slate-400 font-semibold">ECTS gesamt eingetragen</span><div class="text-3xl font-extrabold text-slate-200 mt-1">${String(plannedEcts).replace('.', ',')}</div></div>
+    </div>
+    ${keys.length === 0 ? '<p class="text-sm text-slate-400">Noch keine Fächer vorhanden.</p>' : keys.map(k => {
+      const list = state.courses.filter(c => courseSemester(c) === k);
+      const avg = weightedGradeAverage(list);
+      return `<div class="glass-card rounded-2xl border border-slate-800 mb-4 overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-3 border-b border-slate-800 bg-slate-900/60">
+          <h3 class="text-sm font-bold text-white">${semesterLabel(k)}</h3>
+          <span class="text-xs text-slate-400">Schnitt: <strong class="text-white">${fmtGrade(avg)}</strong></span>
+        </div>
+        <div class="divide-y divide-slate-800">${list.map(c => `
+          <div class="flex items-center gap-3 px-4 py-2.5">
+            <span class="w-2 h-8 rounded-full shrink-0" style="background:${c.color || '#6366f1'}"></span>
+            <div class="flex-1 min-w-0"><div class="text-sm text-slate-100 truncate">${escapeHtml(c.name)}</div>${c.archived ? '<span class="text-[10px] text-amber-400">archiviert</span>' : ''}</div>
+            <label class="text-[11px] text-slate-400 flex items-center gap-1">ECTS <input type="number" min="0" step="0.5" value="${c.ects ?? ''}" onchange="updateCourseGrade('${c.id}','ects',this.value)" class="w-16 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-sm text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500" /></label>
+            <label class="text-[11px] text-slate-400 flex items-center gap-1">Note <select onchange="updateCourseGrade('${c.id}','grade',this.value)" class="bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-sm text-slate-100 outline-none focus:ring-2 focus:ring-indigo-500">${gradeOptions(c.grade)}</select></label>
+          </div>`).join('')}</div>
+      </div>`;
+    }).join('')}`;
+  if (window.lucide && typeof window.lucide.createIcons === 'function') window.lucide.createIcons();
+}
+
 function renderApp() {
+  renderNav();
+  renderTodayShortcut();
+  renderSemesterBar();
   renderHeaderStats();
   renderCourseCards();
   renderCourseFilterSelect();
   renderSessionList();
+  renderGradesView();
   renderActiveUserDisplay();
 }
 
@@ -438,7 +637,7 @@ function renderHeaderStats() {
   let atRiskCount = 0;
   let failedCount = 0;
 
-  state.courses.forEach(c => {
+  activeCourses().forEach(c => {
     const s = state.sessions.filter(sess => sess.courseId === c.id);
     const res = calculateAttendanceStatus(c, s);
     totalSessionsAll += res.totalSessions;
@@ -448,7 +647,7 @@ function renderHeaderStats() {
     else if (res.isAtRisk) atRiskCount++;
   });
 
-  document.getElementById('stat-total-courses').textContent = state.courses.length;
+  document.getElementById('stat-total-courses').textContent = activeCourses().length;
   document.getElementById('stat-at-risk-courses').textContent = atRiskCount + failedCount;
   
   const statusSummaryEl = document.getElementById('stat-global-status');
@@ -468,18 +667,19 @@ function renderHeaderStats() {
 function renderCourseCards() {
   const grid = document.getElementById('courses-grid');
   if (!grid) return;
+  const courses = visibleCourses();
 
-  if (state.courses.length === 0) {
+  if (courses.length === 0) {
     grid.innerHTML = `
       <div class="col-span-full text-center py-12 glass-card rounded-2xl p-8 border border-dashed border-gray-700">
         <div class="w-16 h-16 rounded-full bg-indigo-500/10 text-indigo-400 flex items-center justify-center mx-auto mb-4">
-          <i data-lucide="book-open" class="w-8 h-8"></i>
+          <i data-lucide="${state.showArchive ? 'archive' : 'book-open'}" class="w-8 h-8"></i>
         </div>
-        <h3 class="text-lg font-semibold text-gray-200 mb-1">Noch keine Fächer angelegt</h3>
-        <p class="text-gray-400 text-sm max-w-md mx-auto mb-5">Erstelle dein erstes Fach oder importiere deinen Stundenplan via .ics Kalenderdatei.</p>
-        <button onclick="openCourseModal()" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-xl text-sm transition shadow-lg shadow-indigo-600/30 inline-flex items-center gap-2">
+        <h3 class="text-lg font-semibold text-gray-200 mb-1">${state.showArchive ? 'Archiv ist leer' : 'Keine aktiven Fächer'}</h3>
+        <p class="text-gray-400 text-sm max-w-md mx-auto mb-5">${state.showArchive ? 'Archivierte Fächer erscheinen hier.' : 'Erstelle ein Fach oder importiere deinen Stundenplan via .ics Kalenderdatei.'}</p>
+        ${state.showArchive ? '' : `<button onclick="openCourseModal()" class="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-medium rounded-xl text-sm transition shadow-lg shadow-indigo-600/30 inline-flex items-center gap-2">
           <i data-lucide="plus" class="w-4 h-4"></i> Fach hinzufügen
-        </button>
+        </button>`}
       </div>
     `;
     if (window.lucide && typeof window.lucide.createIcons === 'function') {
@@ -488,7 +688,7 @@ function renderCourseCards() {
     return;
   }
 
-  grid.innerHTML = state.courses.map(course => {
+  grid.innerHTML = courses.map(course => {
     const sessions = state.sessions.filter(s => s.courseId === course.id);
     const result = calculateAttendanceStatus(course, sessions);
     
@@ -591,6 +791,10 @@ function renderCourseCards() {
             <i data-lucide="calendar" class="w-3.5 h-3.5"></i> Termine verwalten (${sessions.length})
           </button>
           <div class="flex items-center gap-2">
+            <span class="text-[10px] font-mono text-gray-500">${escapeHtml(semesterLabel(courseSemester(course)))}</span>
+            <button onclick="toggleCourseArchived('${course.id}')" class="p-1.5 hover:text-gray-200 hover:bg-gray-800 rounded transition" title="${course.archived ? 'Aus Archiv holen' : 'Archivieren'}">
+              <i data-lucide="${course.archived ? 'archive-restore' : 'archive'}" class="w-3.5 h-3.5"></i>
+            </button>
             <button onclick="openCourseModal('${course.id}')" class="p-1.5 hover:text-gray-200 hover:bg-gray-800 rounded transition" title="Kurs bearbeiten">
               <i data-lucide="edit-2" class="w-3.5 h-3.5"></i>
             </button>
@@ -879,12 +1083,18 @@ function openCourseModal(courseId = null) {
       document.getElementById('course-percent-input').value = c.minAttendancePercent;
       document.getElementById('course-color-input').value = c.color || '#6366f1';
       document.getElementById('course-notes-input').value = c.notes || '';
+      fillSemesterSelect(courseSemester(c));
+      document.getElementById('course-ects-input').value = c.ects ?? '';
+      document.getElementById('course-grade-input').value = c.grade ?? '';
     }
   } else {
     title.textContent = 'Neues Fach anlegen';
     document.getElementById('course-id-input').value = '';
     document.getElementById('course-percent-input').value = 75;
     document.getElementById('course-color-input').value = '#6366f1';
+    fillSemesterSelect(state.semesterFilter !== 'all' ? state.semesterFilter : currentSemesterKey());
+    document.getElementById('course-ects-input').value = '';
+    document.getElementById('course-grade-input').value = '';
   }
 
   modal.classList.remove('hidden');
@@ -915,6 +1125,12 @@ function handleCourseFormSubmit(e) {
     return;
   }
 
+  const semester = document.getElementById('course-semester-input').value || currentSemesterKey();
+  const ectsRaw = document.getElementById('course-ects-input').value;
+  const gradeRaw = document.getElementById('course-grade-input').value;
+  const ects = ectsRaw === '' ? null : Math.max(0, parseFloat(ectsRaw) || 0);
+  const grade = gradeRaw === '' ? null : parseInt(gradeRaw, 10);
+
   if (idInput) {
     const existing = state.courses.find(c => c.id === idInput);
     if (existing) {
@@ -925,6 +1141,9 @@ function handleCourseFormSubmit(e) {
       existing.minAttendancePercent = percent;
       existing.color = color;
       existing.notes = notes;
+      existing.semester = semester;
+      existing.ects = ects;
+      existing.grade = grade;
       showToast(`Fach "${name}" aktualisiert.`, 'success');
     }
   } else {
@@ -936,7 +1155,11 @@ function handleCourseFormSubmit(e) {
       lecturer,
       minAttendancePercent: percent,
       color,
-      notes
+      notes,
+      semester,
+      archived: false,
+      ects,
+      grade
     };
     state.courses.push(newCourse);
     showToast(`Fach "${name}" angelegt.`, 'success');
@@ -1627,6 +1850,12 @@ window.resetToDefaultData = resetToDefaultData;
 window.calculateAttendanceStatus = calculateAttendanceStatus;
 window.renderApp = renderApp;
 window.showToast = showToast;
+window.switchView = switchView;
+window.setSemesterFilter = setSemesterFilter;
+window.toggleArchiveView = toggleArchiveView;
+window.toggleCourseArchived = toggleCourseArchived;
+window.archiveSemester = archiveSemester;
+window.updateCourseGrade = updateCourseGrade;
 
 // Automatischer Start bei direktem Aufruf
 if (typeof document !== 'undefined') {
